@@ -1,0 +1,151 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="UTF-8">
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <title>Gráficos da Simulação 5G</title>
+    <link rel="icon" type="image/png" href="grafico-de-barras.png">
+    <script src="https://cdn.jsdelivr.net/npm/chart.js"></script>
+    <style>
+        body { font-family: sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
+        .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
+        .title { font-size: 1.8em; color: #333; }
+        .header-buttons button { padding: 10px 20px; border-radius: 5px; font-size: 1em; cursor: pointer; border: none; margin-left: 10px; }
+        .close-button { background-color: #dc3545; color: white; }
+        .close-button:hover { background-color: #c82333; }
+        .print-button { background-color: #007bff; color: white; }
+        .print-button:hover { background-color: #0056b3; }
+        .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
+        .chart-container { background-color: #fff; padding: 15px; border: 1px solid #eee; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
+        #no-data-message { font-size: 1.2em; color: red; text-align: center; }
+        
+        /* Estilos que se aplicam apenas durante a impressão */
+        @media print {
+            body { background-color: #fff; padding: 10px; }
+            .header { display: none; }
+            .chart-grid { grid-template-columns: 1fr; }
+            .chart-container { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
+        }
+    </style>
+</head>
+<body>
+    <div class="header">
+        <h1 class="title">Análise Visual da Simulação</h1>
+        <div class="header-buttons">
+            <button class="print-button" onclick="window.print()">Imprimir Relatório</button>
+            <button class="close-button" onclick="window.close()">Fechar Janela</button>
+        </div>
+    </div>
+
+    <div id="no-data-message" style="display: none;">
+        Não foram encontrados dados da simulação. Por favor, volte à página principal e execute uma simulação primeiro.
+    </div>
+
+    <div class="chart-grid" id="chart-grid-container">
+        <div class="chart-container"> <canvas id="rssi-histogram-chart"></canvas> </div>
+        <div class="chart-container"> <canvas id="signal-distance-chart"></canvas> </div>
+        <div class="chart-container"> <canvas id="performance-by-service-chart"></canvas> </div>
+        <div class="chart-container"> <canvas id="satisfied-users-chart"></canvas> </div>
+    </div>
+
+<script>
+    /**
+     * Este script é executado assim que a página de gráficos é totalmente carregada.
+     * Ele lê os dados da simulação do 'sessionStorage' e renderiza os 4 gráficos.
+     */
+    document.addEventListener('DOMContentLoaded', () => {
+        // --- 1. RECUPERAÇÃO E VALIDAÇÃO DOS DADOS ---
+        const simulationDataString = sessionStorage.getItem('simulationData');
+        if (!simulationDataString) {
+            document.getElementById('chart-grid-container').style.display = 'none';
+            document.getElementById('no-data-message').style.display = 'block';
+            console.error("Dados da simulação não encontrados no sessionStorage.");
+            return;
+        }
+        const simulationData = JSON.parse(simulationDataString);
+
+        // --- 2. RENDERIZAÇÃO DE TODOS OS GRÁFICOS ---
+        renderRssiHistogram(simulationData);
+        renderSignalVsDistance(simulationData);
+        renderThroughputByService(simulationData);
+        renderSatisfiedUsers(simulationData);
+    });
+
+    // --- 3. FUNÇÕES DE RENDERIZAÇÃO (UMA PARA CADA GRÁFICO) ---
+
+    const commonChartOptions = {
+        responsive: true,
+        maintainAspectRatio: true,
+        plugins: { legend: { display: false } }
+    };
+    
+    /**
+     * Renderiza o histograma de distribuição de RSSI.
+     * @param {Array<object>} data - Os dados da simulação.
+     */
+    function renderRssiHistogram(data) {
+        const rssiValues = data.map(d => d.rssi);
+        const labels = Array.from({length: 8}, (_, i) => -130 + i * 10).map(v => `${v} a ${v+10} dBm`);
+        const bins = Array(8).fill(0);
+        rssiValues.forEach(rssi => {
+            const binIndex = Math.floor((rssi + 130) / 10);
+            if (binIndex >= 0 && binIndex < bins.length) bins[binIndex]++;
+        });
+
+        new Chart(document.getElementById('rssi-histogram-chart'), {
+            type: 'bar',
+            data: { labels: labels, datasets: [{ label: 'Nº de Usuários', data: bins, backgroundColor: 'rgba(40, 167, 69, 0.7)' }] },
+            options: { ...commonChartOptions, plugins: { ...commonChartOptions.plugins, title: { display: true, text: 'Distribuição de Qualidade do Sinal (RSSI)' } } }
+        });
+    }
+
+    /**
+     * Renderiza o gráfico de dispersão de Sinal vs. Distância.
+     * @param {Array<object>} data - Os dados da simulação.
+     */
+    function renderSignalVsDistance(data) {
+        const scatterData = data.map(d => ({ x: d.distancia, y: d.rssi }));
+        
+        new Chart(document.getElementById('signal-distance-chart'), {
+            type: 'scatter',
+            data: { datasets: [{ label: 'Sinal vs. Distância', data: scatterData, backgroundColor: 'rgba(220, 53, 69, 0.7)' }] },
+            options: { ...commonChartOptions, plugins: { ...commonChartOptions.plugins, title: { display: true, text: 'Sinal (RSSI) vs. Distância da Torre' } }, scales: { x: { title: { display: true, text: 'Distância (metros)' } }, y: { title: { display: true, text: 'RSSI (dBm)' } } } }
+        });
+    }
+    
+    /**
+     * Renderiza o gráfico de barras de throughput médio por tipo de serviço.
+     * @param {Array<object>} data - Os dados da simulação.
+     */
+    function renderThroughputByService(data) {
+        const CORES_DEVICE = {'eMBB': 'red', 'mMTC': 'yellow', 'URLLC': 'blue'};
+        const perfData = { eMBB: [], mMTC: [], URLLC: [] };
+        data.forEach(d => perfData[d.type].push(d.downlink));
+        const avgPerf = Object.keys(perfData).map(type => perfData[type].length ? perfData[type].reduce((a, b) => a + b, 0) / perfData[type].length : 0);
+        
+        new Chart(document.getElementById('performance-by-service-chart'), {
+            type: 'bar',
+            data: { labels: ['eMBB', 'mMTC', 'URLLC'], datasets: [{ label: 'Throughput Médio (Mbps)', data: avgPerf, backgroundColor: [CORES_DEVICE.eMBB, CORES_DEVICE.mMTC, CORES_DEVICE.URLLC] }] },
+            options: { ...commonChartOptions, plugins: { ...commonChartOptions.plugins, title: { display: true, text: 'Throughput Médio por Serviço' } }, scales: { y: { beginAtZero: true } } }
+        });
+    }
+
+    /**
+     * Renderiza o gráfico de barras da contagem de usuários satisfeitos.
+     * @param {Array<object>} data - Os dados da simulação.
+     */
+    function renderSatisfiedUsers(data) {
+        const CORES_DEVICE = {'eMBB': 'red', 'mMTC': 'yellow', 'URLLC': 'blue'};
+        const satisfiedData = { eMBB: 0, mMTC: 0, URLLC: 0 };
+        data.forEach(d => { if (d.satisfacao > 0.8) satisfiedData[d.type]++; });
+        
+        new Chart(document.getElementById('satisfied-users-chart'), {
+            type: 'bar',
+            data: { labels: ['eMBB', 'mMTC', 'URLLC'], datasets: [{ label: 'Nº de Usuários Satisfeitos (>80%)', data: Object.values(satisfiedData), backgroundColor: [CORES_DEVICE.eMBB, CORES_DEVICE.mMTC, CORES_DEVICE.URLLC] }] },
+            options: { ...commonChartOptions, plugins: { ...commonChartOptions.plugins, title: { display: true, text: 'Contagem de Usuários Satisfeitos' } }, scales: { y: { beginAtZero: true } } }
+        });
+    }
+</script>
+
+</body>
+</html>

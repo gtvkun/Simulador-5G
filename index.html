@@ -1,0 +1,214 @@
+<!DOCTYPE html>
+<html lang="pt-br">
+<head>
+    <meta charset="utf-8" />
+    <title>Simulador 5G</title>
+    <meta name="viewport" content="width=device-width, initial-scale=1.0">
+    <link rel="icon" type="image/png" href="antena-de-radio.png">
+
+    <link rel="stylesheet" href="https://unpkg.com/leaflet@1.9.4/dist/leaflet.css" />
+    
+    <style>
+        /* --- ESTRUTURA GERAL DA PÁGINA --- */
+        body { font-family: sans-serif; display: flex; height: 100vh; margin: 0; }
+        #map { height: 100%; width: 75%; border-right: 1px solid #ccc;}
+        #sidebar { width: 25%; padding: 20px; box-sizing: border-box; background-color: #f4f4f4; overflow-y: auto; }
+        h2, h3 { color: #333; }
+
+        /* --- PAINEL LATERAL (SIDEBAR) --- */
+        .controls { margin-top: 20px; padding: 15px; background: #e0e0e0; border-radius: 5px;}
+        .control-group { margin-bottom: 15px; }
+        .control-group label { display: block; margin-bottom: 5px; font-weight: bold; color: #555; }
+        .control-group input[type="range"] { width: 100%; }
+        .value-span { font-weight: bold; color: #007bff; }
+
+        /* --- BOTÕES DE AÇÃO --- */
+        .action-button { width: 100%; padding: 10px; color: white; border: none; border-radius: 5px; font-size: 1em; cursor: pointer; }
+        #reset-button { background-color: #dc3545; }
+        #reset-button:hover { background-color: #c82333; }
+        #graph-button { background-color: #28a745; margin-top: 10px; }
+        #graph-button:hover { background-color: #218838; }
+        #graph-button:disabled { background-color: #6c757d; cursor: not-allowed; }
+
+        /* --- SEÇÃO DE RESULTADOS --- */
+        .metric { background: #e9e9e9; padding: 10px; border-radius: 5px; margin-bottom: 10px; }
+        .metric-title { font-size: 0.9em; color: #666; display: flex; align-items: center; }
+        .metric-value { font-size: 1.5em; font-weight: bold; }
+        #loading { display: none; color: #007bff; font-weight: bold;}
+        .legend-color { width: 14px; height: 14px; border-radius: 50%; margin-right: 8px; border: 1px solid #ccc; }
+    </style>
+</head>
+<body>
+    <div id="map"></div>
+    
+    <div id="sidebar">
+        <h2>Simulador 5G</h2>
+        <p>Clique no mapa para posicionar a torre 5G.</p>
+        
+        <div class="controls">
+            <div class="control-group"> <label for="power-slider">Potência da Torre: <span id="power-value" class="value-span">37.00 dBm</span></label> <input type="range" id="power-slider" min="250" max="20000" value="5000" step="250"> </div>
+            <div class="control-group"> <label for="radius-slider">Raio: <span id="radius-value" class="value-span">400</span>m</label> <input type="range" id="radius-slider" min="15" max="600" value="400"> </div>
+            <div class="control-group"> <button id="reset-button" class="action-button">Resetar Simulação</button> <button id="graph-button" class="action-button" disabled>Gerar Gráficos</button> </div>
+        </div>
+        
+        <h3>Resultados</h3>
+        <div id="loading">Simulando...</div>
+        <div id="results"> <p>Aguardando posicionamento da torre...</p> </div>
+    </div>
+    
+    <script src="https://unpkg.com/leaflet@1.9.4/dist/leaflet.js"></script>
+    <script>
+        /* --- 1. VARIÁVEIS GLOBAIS E CONSTANTES --- */
+        let latestSimulationData = null; // Armazena os dados da última simulação para os gráficos
+        let towerMarker = null;          // Objeto do marcador da torre no mapa
+        let towerRadiusCircle = null;    // Objeto do círculo de raio visual
+        
+        const CORES_DEVICE = {'eMBB': 'red', 'mMTC': 'yellow', 'URLLC': 'blue'};
+        const API_URL = 'http://127.0.0.1:8000/simulate';
+        const towerIcon = L.icon({ iconUrl: 'antena.png', iconSize: [80, 80], iconAnchor: [40, 80], popupAnchor: [0, -80] });
+        
+        /* --- 2. SELETORES DE ELEMENTOS DOM (CACHE) --- */
+        // Guardar referências aos elementos da página melhora a performance
+        const graphButton = document.getElementById('graph-button');
+        const loadingDiv = document.getElementById('loading');
+        const resultsDiv = document.getElementById('results');
+        const radiusSlider = document.getElementById('radius-slider');
+        const radiusValueSpan = document.getElementById('radius-value');
+        const powerSlider = document.getElementById('power-slider');
+        const powerValueSpan = document.getElementById('power-value');
+        const resetButton = document.getElementById('reset-button');
+        
+        /* --- 3. INICIALIZAÇÃO DO MAPA LEAFLET --- */
+        const map = L.map('map').setView([-18.9186, -48.2570], 16);
+        L.tileLayer('https://{s}.tile.openstreetmap.org/{z}/{x}/{y}.png', {
+        attribution: '&copy; <a href="https://www.openstreetmap.org/copyright">OpenStreetMap</a> contributors'
+        }).addTo(map);
+        let deviceLayer = L.layerGroup().addTo(map);
+
+        /* --- 4. FUNÇÕES PRINCIPAIS DA APLICAÇÃO --- */
+        
+        /**
+         * Executa a simulação completa: envia dados para o backend e atualiza a UI.
+         * @param {L.LatLng} coords - As coordenadas da torre.
+         */
+        async function runSimulation(coords) {
+            loadingDiv.style.display = 'block';
+            resultsDiv.innerHTML = '';
+            graphButton.disabled = true;
+            updateTowerRadius(coords);
+            const power_dbm = 10 * Math.log10(powerSlider.value);
+            
+            try {
+                // Envia a requisição para o backend
+                const response = await fetch(API_URL, {
+                    method: 'POST',
+                    headers: { 'Content-Type': 'application/json' },
+                    body: JSON.stringify({ lat: coords.lat, lon: coords.lng, potencia_dbm: power_dbm })
+                });
+                if (!response.ok) throw new Error(`HTTP error! status: ${response.status}`);
+                
+                // Processa a resposta
+                const data = await response.json();
+                latestSimulationData = data.devices;
+                graphButton.disabled = false;
+                
+                // Atualiza o mapa e as métricas
+                deviceLayer.clearLayers();
+                latestSimulationData.forEach(renderDeviceOnMap);
+                updateMetrics(latestSimulationData);
+                
+            } catch (error) {
+                resultsDiv.innerHTML = `<p style="color:red;"><b>Erro:</b> Não foi possível conectar ao servidor. Verifique se o backend está em execução.</p>`;
+                console.error("Erro na simulação:", error);
+            } finally {
+                loadingDiv.style.display = 'none';
+            }
+        }
+        
+        /**
+         * Renderiza um único dispositivo (ponto colorido) no mapa.
+         * @param {object} device - O objeto do dispositivo recebido do backend.
+         */
+        function renderDeviceOnMap(device) {
+            const popupContent = `<b>Tipo:</b> ${device.type}<br><b>Sinal (RSSI):</b> ${device.rssi.toFixed(2)} dBm<br><b>Downlink:</b> ${device.downlink.toFixed(2)} Mbps<br><b>Uplink:</b> ${device.uplink.toFixed(2)} Mbps`;
+            L.circleMarker(device.pos, { 
+                radius: 5, 
+                color: CORES_DEVICE[device.type], 
+                fill: true, 
+                fillColor: CORES_DEVICE[device.type], 
+                fillOpacity: device.satisfacao > 0.1 ? 0.9 : 0.2 
+            }).bindPopup(popupContent).addTo(deviceLayer);
+        }
+
+        /**
+         * Atualiza as métricas de satisfação na barra lateral.
+         * @param {Array<object>} devices - A lista de todos os dispositivos.
+         */
+        function updateMetrics(devices) {
+            const satisfacao = {'eMBB': [], 'mMTC': [], 'URLLC': []};
+            devices.forEach(d => satisfacao[d.type].push(d.satisfacao));
+            
+            const calcAvg = (arr) => arr.length ? (arr.reduce((a,b)=>a+b,0) / arr.length) * 100 : 0;
+            
+            resultsDiv.innerHTML = `
+                <div class="metric"><div class="metric-title"><div class="legend-color" style="background-color: ${CORES_DEVICE['eMBB']}"></div><span>Satisfação Média eMBB</span></div><div class="metric-value">${calcAvg(satisfacao.eMBB).toFixed(1)}%</div></div>
+                <div class="metric"><div class="metric-title"><div class="legend-color" style="background-color: ${CORES_DEVICE['mMTC']}"></div><span>Satisfação Média mMTC</span></div><div class="metric-value">${calcAvg(satisfacao.mMTC).toFixed(1)}%</div></div>
+                <div class="metric"><div class="metric-title"><div class="legend-color" style="background-color: ${CORES_DEVICE['URLLC']}"></div><span>Satisfação Média URLLC</span></div><div class="metric-value">${calcAvg(satisfacao.URLLC).toFixed(1)}%</div></div>
+            `;
+        }
+        
+        /**
+         * Desenha ou atualiza o círculo de raio visual da torre.
+         * @param {L.LatLng} coords - As coordenadas da torre.
+         */
+        function updateTowerRadius(coords) {
+            if (towerRadiusCircle) {
+                towerRadiusCircle.setLatLng(coords).setRadius(radiusSlider.value);
+            } else {
+                towerRadiusCircle = L.circle(coords, { radius: radiusSlider.value, color: 'green', weight: 2, fillOpacity: 0.1 }).addTo(map);
+            }
+        }
+        
+        /**
+         * Reseta a simulação para o estado inicial.
+         */
+        function resetSimulation() {
+            if (towerMarker) { map.removeLayer(towerMarker); towerMarker = null; }
+            if (towerRadiusCircle) { map.removeLayer(towerRadiusCircle); towerRadiusCircle = null; }
+            deviceLayer.clearLayers();
+            resultsDiv.innerHTML = '<p>Aguardando posicionamento da torre...</p>';
+            radiusSlider.value = 400; radiusValueSpan.textContent = '400';
+            powerSlider.value = 5000; powerValueSpan.textContent = (10 * Math.log10(5000)).toFixed(2) + ' dBm';
+            latestSimulationData = null; graphButton.disabled = true;
+        }
+
+        /* --- 5. EVENT LISTENERS (OUVINTES DE EVENTOS) --- */
+        
+        // Evento de clique no mapa para posicionar a torre
+        map.on('click', (e) => {
+            if (!towerMarker) {
+                towerMarker = L.marker(e.latlng, { draggable: true, icon: towerIcon }).addTo(map).bindPopup('<b>Torre 5G</b>').openPopup();
+                towerMarker.on('dragend', (event) => runSimulation(event.target.getLatLng()));
+                powerSlider.addEventListener('input', () => { if (towerMarker) runSimulation(towerMarker.getLatLng()); });
+                runSimulation(e.latlng);
+            }
+        });
+
+        // Evento do botão para gerar gráficos
+        graphButton.addEventListener('click', () => {
+            if (latestSimulationData && towerMarker) {
+                // Salva os dados na sessão do navegador para a outra página ler
+                sessionStorage.setItem('simulationData', JSON.stringify(latestSimulationData));
+                sessionStorage.setItem('towerLocation', JSON.stringify(towerMarker.getLatLng()));
+                // Abre a página de gráficos em uma nova aba
+                window.open('graficos.html', '_blank');
+            }
+        });
+        
+        // Eventos dos sliders e do botão de reset
+        radiusSlider.addEventListener('input', (e) => { radiusValueSpan.textContent = e.target.value; if (towerMarker) { updateTowerRadius(towerMarker.getLatLng()); } });
+        powerSlider.addEventListener('input', (e) => { powerValueSpan.textContent = `${(10 * Math.log10(e.target.value)).toFixed(2)} dBm`; });
+        resetButton.addEventListener('click', resetSimulation);
+    </script>
+</body>
+</html>
