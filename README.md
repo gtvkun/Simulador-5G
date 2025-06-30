@@ -1,6 +1,6 @@
 #  Simulador Interativo de Célula 5G
 
-![Versão](https://img.shields.io/badge/versão-1.0-blue)
+![Versão](https://img.shields.io/badge/versão-2.1-blue)
 ![Python](https://img.shields.io/badge/Python-3.8%2B-blue?logo=python)
 ![FastAPI](https://img.shields.io/badge/FastAPI-0.92.0-green?logo=fastapi)
 ![JavaScript](https://img.shields.io/badge/JavaScript-ES6-yellow?logo=javascript)
