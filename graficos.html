@@ -9,11 +9,11 @@
     <style>
         body { font-family: sans-serif; background-color: #f4f4f4; margin: 0; padding: 20px; }
         .header { display: flex; justify-content: space-between; align-items: center; border-bottom: 2px solid #ddd; padding-bottom: 10px; margin-bottom: 20px; }
-        .title { font-size: 1.8em; color: #333; }
+        .title { font-size: 1.8em; color: #000000; }
         .header-buttons button { padding: 10px 20px; border-radius: 5px; font-size: 1em; cursor: pointer; border: none; margin-left: 10px; }
-        .close-button { background-color: #dc3545; color: white; }
-        .close-button:hover { background-color: #c82333; }
-        .print-button { background-color: #007bff; color: white; }
+        .close-button { background-color: #d3d3d3; color: #000000; }
+        .close-button:hover { background-color: #98000f; }
+        .print-button { background-color: #d3d3d3; color: #000000; }
         .print-button:hover { background-color: #0056b3; }
         .chart-grid { display: grid; grid-template-columns: 1fr 1fr; gap: 25px; }
         .chart-container { background-color: #fff; padding: 15px; border: 1px solid #eee; border-radius: 8px; box-shadow: 0 2px 4px rgba(0,0,0,0.1); }
@@ -21,7 +21,7 @@
         
         /* Estilos que se aplicam apenas durante a impressão */
         @media print {
-            body { background-color: #fff; padding: 10px; }
+            body { background-color: #d3d3d3; padding: 10px; }
             .header { display: none; }
             .chart-grid { grid-template-columns: 1fr; }
             .chart-container { box-shadow: none; border: 1px solid #ccc; page-break-inside: avoid; }
@@ -85,10 +85,12 @@
      */
     function renderRssiHistogram(data) {
         const rssiValues = data.map(d => d.rssi);
-        const labels = Array.from({length: 8}, (_, i) => -130 + i * 10).map(v => `${v} a ${v+10} dBm`);
+        // Inicia as faixas em -110 dBm para criar os novos intervalos
+        const labels = Array.from({length: 8}, (_, i) => -110 + i * 10).map(v => `${v} a ${v+10} dBm`);
         const bins = Array(8).fill(0);
         rssiValues.forEach(rssi => {
-            const binIndex = Math.floor((rssi + 130) / 10);
+            // Ajusta a fórmula para a nova faixa inicial de -110 dBm
+            const binIndex = Math.floor((rssi + 110) / 10);
             if (binIndex >= 0 && binIndex < bins.length) bins[binIndex]++;
         });
 
@@ -108,7 +110,7 @@
         
         new Chart(document.getElementById('signal-distance-chart'), {
             type: 'scatter',
-            data: { datasets: [{ label: 'Sinal vs. Distância', data: scatterData, backgroundColor: 'rgba(220, 53, 69, 0.7)' }] },
+            data: { datasets: [{ label: 'Sinal vs. Distância', data: scatterData, backgroundColor:  '#bd1515' }] },
             options: { ...commonChartOptions, plugins: { ...commonChartOptions.plugins, title: { display: true, text: 'Sinal (RSSI) vs. Distância da Torre' } }, scales: { x: { title: { display: true, text: 'Distância (metros)' } }, y: { title: { display: true, text: 'RSSI (dBm)' } } } }
         });
     }

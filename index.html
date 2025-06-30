@@ -24,9 +24,9 @@
 
         /* --- BOTÕES DE AÇÃO --- */
         .action-button { width: 100%; padding: 10px; color: white; border: none; border-radius: 5px; font-size: 1em; cursor: pointer; }
-        #reset-button { background-color: #dc3545; }
+        #reset-button { background-color: #67000a; }
         #reset-button:hover { background-color: #c82333; }
-        #graph-button { background-color: #28a745; margin-top: 10px; }
+        #graph-button { background-color: #126926; margin-top: 10px; }
         #graph-button:hover { background-color: #218838; }
         #graph-button:disabled { background-color: #6c757d; cursor: not-allowed; }
 
@@ -68,7 +68,6 @@
         const towerIcon = L.icon({ iconUrl: 'antena.png', iconSize: [80, 80], iconAnchor: [40, 80], popupAnchor: [0, -80] });
         
         /* --- 2. SELETORES DE ELEMENTOS DOM (CACHE) --- */
-        // Guardar referências aos elementos da página melhora a performance
         const graphButton = document.getElementById('graph-button');
         const loadingDiv = document.getElementById('loading');
         const resultsDiv = document.getElementById('results');
@@ -95,6 +94,8 @@
             loadingDiv.style.display = 'block';
             resultsDiv.innerHTML = '';
             graphButton.disabled = true;
+            powerSlider.disabled = true;    // Bloqueia o slider de potência
+            radiusSlider.disabled = true;   // Bloqueia o slider de raio
             updateTowerRadius(coords);
             const power_dbm = 10 * Math.log10(powerSlider.value);
             
@@ -122,6 +123,7 @@
                 console.error("Erro na simulação:", error);
             } finally {
                 loadingDiv.style.display = 'none';
+                // Os sliders NÃO são mais reabilitados aqui.
             }
         }
         
@@ -179,6 +181,11 @@
             resultsDiv.innerHTML = '<p>Aguardando posicionamento da torre...</p>';
             radiusSlider.value = 400; radiusValueSpan.textContent = '400';
             powerSlider.value = 5000; powerValueSpan.textContent = (10 * Math.log10(5000)).toFixed(2) + ' dBm';
+            
+            // Desbloqueia os controles ao resetar
+            powerSlider.disabled = false;
+            radiusSlider.disabled = false;
+
             latestSimulationData = null; graphButton.disabled = true;
         }
 
@@ -186,28 +193,36 @@
         
         // Evento de clique no mapa para posicionar a torre
         map.on('click', (e) => {
-            if (!towerMarker) {
-                towerMarker = L.marker(e.latlng, { draggable: true, icon: towerIcon }).addTo(map).bindPopup('<b>Torre 5G</b>').openPopup();
-                towerMarker.on('dragend', (event) => runSimulation(event.target.getLatLng()));
-                powerSlider.addEventListener('input', () => { if (towerMarker) runSimulation(towerMarker.getLatLng()); });
-                runSimulation(e.latlng);
-            }
+            if (towerMarker) return; // Impede a criação de uma nova torre se uma já existe
+            
+            towerMarker = L.marker(e.latlng, { draggable: true, icon: towerIcon }).addTo(map).bindPopup('<b>Torre 5G</b>').openPopup();
+            towerMarker.on('dragend', (event) => runSimulation(event.target.getLatLng()));
+            runSimulation(e.latlng);
         });
 
         // Evento do botão para gerar gráficos
         graphButton.addEventListener('click', () => {
             if (latestSimulationData && towerMarker) {
-                // Salva os dados na sessão do navegador para a outra página ler
                 sessionStorage.setItem('simulationData', JSON.stringify(latestSimulationData));
                 sessionStorage.setItem('towerLocation', JSON.stringify(towerMarker.getLatLng()));
-                // Abre a página de gráficos em uma nova aba
                 window.open('graficos.html', '_blank');
             }
         });
         
         // Eventos dos sliders e do botão de reset
-        radiusSlider.addEventListener('input', (e) => { radiusValueSpan.textContent = e.target.value; if (towerMarker) { updateTowerRadius(towerMarker.getLatLng()); } });
-        powerSlider.addEventListener('input', (e) => { powerValueSpan.textContent = `${(10 * Math.log10(e.target.value)).toFixed(2)} dBm`; });
+        radiusSlider.addEventListener('input', (e) => { 
+            radiusValueSpan.textContent = e.target.value; 
+            if (towerMarker) { updateTowerRadius(towerMarker.getLatLng()); } 
+        });
+        powerSlider.addEventListener('input', (e) => { 
+            powerValueSpan.textContent = `${(10 * Math.log10(e.target.value)).toFixed(2)} dBm`; 
+        });
+
+        // Dispara a simulação apenas quando o usuário SOLTA o slider de potência
+        powerSlider.addEventListener('change', () => { 
+            if (towerMarker) runSimulation(towerMarker.getLatLng()); 
+        });
+
         resetButton.addEventListener('click', resetSimulation);
     </script>
 </body>
